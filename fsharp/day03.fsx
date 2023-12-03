@@ -2,74 +2,64 @@ let data = System.IO.File.ReadAllLines "data/day03.txt"
 
 #time
 
-let height = Array.length data
-let width = data[0].Length
-
-let adjacentToSymbol y x length =
-    (([ x - 1 .. x + length ] |> List.where (fun i -> i >= 0 && i < width)),
-     ([ y - 1 .. y + 1 ] |> List.where (fun i -> i >= 0 && i < height)))
-    ||> List.allPairs
-    |> List.exists (fun (x, y) ->
-        let c = data[y][x]
-        c <> '.' && System.Char.IsDigit c |> not)
-
 let adjacent (x, y) =
     ([ x - 1 .. x + 1 ], [ y - 1 .. y + 1 ])
     ||> List.allPairs
     |> List.where ((<>) (x, y))
     |> set
 
-let rec part1 (acc: int) (cursor: int) (y: int) (row: string) =
-    if row = "" then
-        acc
-    elif System.Char.IsDigit row[0] then
-        let num = row |> Seq.takeWhile System.Char.IsDigit |> System.String.Concat
-        let adj = adjacentToSymbol y cursor num.Length
-        part1 (if adj then acc + int num else acc) (cursor + num.Length) y row[num.Length ..]
-    else
-        let nonNum =
-            row |> Seq.takeWhile (System.Char.IsDigit >> not) |> System.String.Concat
+type Symbol = { value: char; coord: int * int }
 
-        part1 acc (cursor + nonNum.Length) y row[nonNum.Length ..]
+type Number = { value: int; coords: (int * int) Set }
 
-let rec parse (acc: ((int * int) Set * int) list) (cursor: int) (y: int) (row: string) =
+let rec parse (numbers: Number list, symbols: Symbol list) (cursor: int) (y: int) (row: string) =
     if row = "" then
-        acc
+        numbers, symbols
     elif System.Char.IsDigit row[0] then
         let num = row |> Seq.takeWhile System.Char.IsDigit |> System.String.Concat
 
         let coords =
             [ cursor .. cursor + num.Length - 1 ] |> List.map (fun x -> x, y) |> set
 
-        parse ((coords, int num) :: acc) (cursor + num.Length) y row[num.Length ..]
-
+        parse ({ value = int num; coords = coords } :: numbers, symbols) (cursor + num.Length) y row[num.Length ..]
+    elif row[0] = '.' then
+        let dots = row |> Seq.takeWhile ((=) '.') |> Seq.length
+        parse (numbers, symbols) (cursor + dots) y row[dots..]
     else
-        let nonNum =
-            row |> Seq.takeWhile (System.Char.IsDigit >> not) |> System.String.Concat
+        parse (numbers, { value = row[0]; coord = cursor, y } :: symbols) (cursor + 1) y row[1..]
 
-        parse acc (cursor + nonNum.Length) y row[nonNum.Length ..]
+let parsed = data |> Array.mapi (parse ([], []) 0)
+let numbers = parsed |> Array.collect (fst >> List.toArray)
+let symbols = parsed |> Array.collect (snd >> List.toArray)
+let symbolCoords = symbols |> Array.map _.coord |> set
 
-let numbers = data |> Array.mapi (parse [] 0)
+let part1 =
+    numbers
+    |> Array.where (
+        _.coords
+        >> Set.exists (adjacent >> Set.intersect symbolCoords >> Set.isEmpty >> not)
+    )
+    |> Array.sumBy _.value
 
 let part2 =
-    data
-    |> Array.mapi (fun y row -> row |> Seq.indexed |> Seq.where (snd >> (=) '*') |> Seq.map (fun (x, _) -> x, y))
-    |> Array.collect Seq.toArray
-    |> Array.sumBy (fun (astX, astY) ->
-        let adj = adjacent (astX, astY)
+    symbols
+    |> Array.where (_.value >> (=) '*')
+    |> Array.sumBy (
+        _.coord
+        >> adjacent
+        >> fun adj ->
+            let adjNum =
+                numbers
+                |> Array.where (_.coords >> Set.intersect adj >> Set.isEmpty >> not)
+                |> Array.map _.value
 
-        numbers
-        |> Array.map (
-            List.choose (fun (c, num) ->
-                if Set.intersect adj c |> Set.isEmpty |> not then
-                    Some num
-                else
-                    None)
-        )
-        |> Array.collect List.toArray
-        |> fun arr -> if Array.length arr = 2 then Array.reduce (*) arr else 0)
+            if Array.length adjNum = 2 then
+                Array.reduce (*) adjNum
+            else
+                0
+    )
 
-data |> Array.mapi (part1 0 0) |> Array.sum |> printfn "Part 1: %i"
+part1 |> printfn "Part 1: %i"
 part2 |> printfn "Part 2: %i"
 
 #time
